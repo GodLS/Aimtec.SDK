@@ -70,7 +70,7 @@
         ///     Gets the children.
         /// </summary>
         /// <value>The children.</value>
-        internal override Dictionary<string, MenuComponent> Children { get; } = new Dictionary<string, MenuComponent>();
+        public Dictionary<string, MenuComponent> Children { get; } = new Dictionary<string, MenuComponent>();
 
         /// <summary>
         ///     Gets a value indicating whether this instance is a menu.
@@ -289,18 +289,38 @@
         #region Methods
 
         /// <inheritdoc />
-        internal IMenuComponent GetItem(string name)
+        internal IMenuComponent GetItem(string name, bool showLog = true)
         {
-            MenuComponent item = null;
+            this.Children.TryGetValue(name, out var ritem);
 
-            this.Children.TryGetValue(name, out item);
-
-            if (item == null)
+            if (ritem != null)
             {
-                Logger.Warn("[Menu] Item: {0} was not found in the menu: {1}", name, this.InternalName);
+                return ritem;
             }
 
-            return item;
+            foreach (var item in this.Children.Values)
+            {
+                var asmenu = item as Menu;
+
+                if (asmenu == null)
+                {
+                    continue;
+                }
+
+                ritem = (MenuComponent) asmenu.GetItem(name, false);
+
+                if (ritem != null)
+                {
+                    return ritem;
+                }
+            }
+
+            if (showLog)
+            {
+                this.Logger.Warn("[Menu] Item: {0} was not found in the menu: {1}", name, this.InternalName);
+            }
+
+            return null;
         }
 
         internal override void LoadValue()

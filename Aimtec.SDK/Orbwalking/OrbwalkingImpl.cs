@@ -39,7 +39,11 @@ namespace Aimtec.SDK.Orbwalking
 
         public float AnimationTime => Player.AttackCastDelay * 1000;
 
-        public float AttackCoolDownTime => Player.AttackDelay * 1000 - this.AttackDelayReduction;
+        public float AttackCoolDownTime
+            =>
+                (Player.ChampionName.Equals("Graves")
+                     ? 1.07402968406677f * Player.AttackDelay - 0.716238141059875f
+                     : Player.AttackDelay) * 1000 - this.AttackDelayReduction;
 
         public override bool IsWindingUp
         {
@@ -250,6 +254,11 @@ namespace Aimtec.SDK.Orbwalking
             }
 
             if (Player.ChampionName.Equals("Jhin") && Player.HasBuff("JhinPassiveReload"))
+            {
+                return false;
+            }
+            
+            if (Player.ChampionName.Equals("Graves") && !Player.HasBuff("GravesBasicAttackAmmo1"))
             {
                 return false;
             }

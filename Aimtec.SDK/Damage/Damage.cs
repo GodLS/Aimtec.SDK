@@ -78,8 +78,10 @@ namespace Aimtec.SDK.Damage
         /// <returns>System.Double.</returns>
         public static double GetAutoAttackDamage(this Obj_AI_Base source, Obj_AI_Base target)
         {
-            var dmgPhysical = (double) source.TotalAttackDamage;
+            var dmgPhysical = (double)source.TotalAttackDamage;
             var dmgMagical = 0d;
+            var dmgTrue = 0d;
+
             var dmgReduce = 1d;
 
             var hero = source as Obj_AI_Hero;
@@ -90,30 +92,14 @@ namespace Aimtec.SDK.Damage
                 var passiveDamage = DamagePassives.ComputePassiveDamages(hero, target);
                 dmgPhysical += passiveDamage.PhysicalDamage;
                 dmgMagical += passiveDamage.MagicalDamage;
+                dmgTrue += passiveDamage.TrueDamage;
 
                 dmgPhysical *= passiveDamage.PhysicalDamagePercent;
                 dmgMagical *= passiveDamage.MagicalDamagePercent;
-
-                var ardentCenserBuff = hero.GetBuff("ARDENTCENSER"); // TODO: Add real buffname.
-                var ardentCenserBuffCaster = (Obj_AI_Hero)ardentCenserBuff?.Caster;
-                if (ardentCenserBuffCaster != null)
-                {
-                    dmgMagical += 19.12 + 0.88 * ardentCenserBuffCaster.Level;
-                }
-
-                if (target.GetBuffCount("braummarkcounter") == 3)
-                {
-                    dmgMagical += 16 + 10 * source.Level;
-                }
+                dmgTrue *= passiveDamage.TrueDamagePercent;
 
                 if (target is Obj_AI_Minion)
                 {
-                    var mastery = hero.GetCunningPage(MasteryId.Cunning.Savagery);
-                    if (mastery != null && hero.IsUsingMastery(mastery))
-                    {
-                        dmgPhysical += new[] { 1, 2, 3, 4, 5 }[mastery.Points-1];
-                    }
-
                     if (hero.HasItem(ItemId.DoransShield))
                     {
                         dmgPhysical += 5;
@@ -158,6 +144,8 @@ namespace Aimtec.SDK.Damage
             dmgPhysical = source.CalculatePhysicalDamage(target, dmgPhysical);
             dmgMagical = source.CalculateMagicDamage(target, dmgMagical);
 
+            dmgPhysical += source.GetPassiveFlatMod(target);
+
             switch (targetHero?.ChampionName)
             {
                 case "Amumu":
@@ -168,7 +156,7 @@ namespace Aimtec.SDK.Damage
                     break;
             }
 
-            return Math.Max(Math.Floor(dmgPhysical + dmgMagical) * dmgReduce + source.GetPassiveFlatMod(target) - 5, 0);
+            return Math.Max(Math.Floor(dmgPhysical + dmgMagical) * dmgReduce + dmgTrue, 0);
         }
 
         /// <summary>
@@ -229,7 +217,7 @@ namespace Aimtec.SDK.Damage
                 if (!string.IsNullOrEmpty(spellData.ScalingBuff))
                 {
                     var buffCount = (spellData.ScalingBuffTarget == DamageScalingTarget.Source ? source : target)
-                        .GetBuffCount(spellData.ScalingBuff);
+                        .GetRealBuffCount(spellData.ScalingBuff);
 
                     dmgBase = buffCount > 0 ? dmgBase * (buffCount + spellData.ScalingBuffOffset) : 0;
                 }
@@ -348,7 +336,7 @@ namespace Aimtec.SDK.Damage
                 }
             }
 
-            return Math.Max(Math.Floor(totalDamage * dmgReduce  + dmgPassive), 0);
+            return Math.Max(Math.Floor(totalDamage * dmgReduce + dmgPassive), 0);
         }
 
         #endregion
@@ -383,28 +371,13 @@ namespace Aimtec.SDK.Damage
             {
                 value = 100 / (100 + target.SpellBlock * source.PercentMagicPenetration - source.FlatMagicPenetration);
             }
-			
-            var targetHero = target as Obj_AI_Hero;
+
             if (target.HasBuff("cursedtouch"))
             {
                 amount *= 1.1;
             }
 
-            if (targetHero?.ChampionName == "Kassadin" &&
-                targetHero.HasBuff("VoidStone"))
-            {
-                amount *= 0.85;
-            }
-
-            var hero = source as Obj_AI_Hero;
-            var damageReductions = DamageReductions.ComputeReductions(hero, target, DamageType.Magical);
-            var masteryDamage = DamageMasteries.ComputeMasteryDamages(hero, target);
-
-            return Math.Max(
-                        Math.Floor(source.GetPassivePercentMod(target, value, DamageType.Magical) * amount * damageReductions.PercentDamageReduction)
-                        + masteryDamage.MagicalDamage
-                        - damageReductions.FlatDamageReduction,
-                   0);
+            return Math.Max(Math.Floor(source.GetPassivePercentMod(target, value, DamageType.Magical) * amount), 0);
         }
 
         /// <summary>
@@ -422,8 +395,8 @@ namespace Aimtec.SDK.Damage
             }
 
             double armorPenetrationPercent = source.PercentArmorPenetration;
-            double armorPenetrationFlat = source.PhysicalLethality * (0.6 + 0.4 * target.Level / 18);
             double bonusArmorPenetrationMod = source.PercentBonusArmorPenetration;
+            var armorPenetrationFlat = source.PhysicalLethality * (0.6 + 0.4 * source.Level / 18);
 
             switch (source.Type)
             {
@@ -463,19 +436,11 @@ namespace Aimtec.SDK.Damage
                     - armorPenetrationFlat);
             }
 
-            var hero = source as Obj_AI_Hero;
-            var damageReductions = DamageReductions.ComputeReductions(hero, target, DamageType.Physical);
-            var masteryDamage = DamageMasteries.ComputeMasteryDamages(hero, target);
-
-            return Math.Max(
-                        Math.Floor(source.GetPassivePercentMod(target, value, DamageType.Physical) * amount * damageReductions.PercentDamageReduction)
-                        + masteryDamage.PhysicalDamage
-                        - damageReductions.FlatDamageReduction,
-                   0);
+            return Math.Max(Math.Floor(source.GetPassivePercentMod(target, value, DamageType.Physical) * amount), 0);
         }
 
         /// <summary>
-        ///     Gets the passive flat mod.
+        ///     Gets the physical passive flat mod.
         /// </summary>
         /// <param name="source">The source.</param>
         /// <param name="target">The target.</param>
@@ -493,6 +458,20 @@ namespace Aimtec.SDK.Damage
                     (source is Obj_AI_Hero || source is Obj_AI_Minion && source.Team == GameObjectTeam.Neutral))
                 {
                     amount -= 2;
+                }
+            }
+
+            var hero = source as Obj_AI_Hero;
+            if (hero != null)
+            {
+                var targetMinion = target as Obj_AI_Minion;
+                if (targetMinion != null)
+                {
+                    var savagery = hero.GetCunningPage(MasteryId.Cunning.Savagery);
+                    if (savagery != null && hero.IsUsingMastery(savagery))
+                    {
+                        amount += new[] { 1, 2, 3, 4, 5 }[savagery.Points - 1];
+                    }
                 }
             }
 
@@ -514,61 +493,135 @@ namespace Aimtec.SDK.Damage
             // ReSharper disable once UnusedParameter.Local
             DamageType damageType)
         {
-            var minion = target as Obj_AI_Minion;
-            if (source is Obj_AI_Turret)
+            var hero = source as Obj_AI_Hero;
+            var turret = source as Obj_AI_Turret;
+            var minion = source as Obj_AI_Minion;
+
+            var minionTarget = target as Obj_AI_Minion;
+            var targetHero = target as Obj_AI_Hero;
+
+            if (turret != null)
             {
-                if (minion != null &&
-                    (minion.Name.Contains("Siege") || minion.Name.Contains("Super")))
+                if (minionTarget != null &&
+                    (minionTarget.UnitSkinName.Contains("MinionSiege") || minionTarget.UnitSkinName.Contains("MinionSuper")))
                 {
                     amount *= 0.7;
                 }
             }
-            else if (source is Obj_AI_Hero)
+
+            if (minion != null)
             {
-                if (minion != null)
+                if (minionTarget != null &&
+                    Game.MapId == GameMapId.SummonersRift)
                 {
-                    if (source.HasBuff("barontarget") &&
-                        minion.UnitSkinName.Contains("SRU_Baron"))
-                    {
-                        amount *= 0.5;
-                    }
-                    else if (source.HasBuff("dragonbuff_tooltipmanager") &&
-                        minion.HasBuff("s5_dragonvengeance") &&
-                        minion.UnitSkinName.Contains("SRU_Dragon"))
-                    {
-                        /* TODO: More like broscience, not 100% consistent, the effect is "7% reduced damage for each dragon killed by your team."
-                            * while this doesn't do anything else than reducing by 7% your damage for each dragon TYPE you've killed.
-                            Buffs can't tell you how many dragons you've killed, nor can the enemy buff, so there's no way to tell in-game, needs some kind of property. */
-                        amount *= 1 - 7 * (source.ValidActiveBuffs().Count(b => b.Name.Contains("dragonbuff")) - 1) / 100;
-                    }
+                    amount *= 1f + minion.PercentDamageToBarracksMinionMod;
                 }
             }
 
-            var hero = source as Obj_AI_Hero;
+            if (minionTarget != null)
+            {
+                if (minionTarget.UnitSkinName.Contains("MinionMelee") &&
+                    minionTarget.HasBuff("exaltedwithbaronnashorminion"))
+                {
+                    amount *= 0.25;
+                }
+            }
+
             if (hero != null)
             {
-                var masteryDamage = DamageMasteries.ComputeMasteryDamages(hero, target);
-                amount *= masteryDamage.PercentDamage;
+                var doubleEdgedSword = hero.GetFerocityPage(MasteryId.Ferocity.DoubleEdgedSword);
+                if (doubleEdgedSword != null &&
+                    hero.IsUsingMastery(doubleEdgedSword))
+                {
+                    amount *= 1 + 3 / 100;
+                }
 
-                var targetHero = target as Obj_AI_Hero;
+                var greenfathersgift = hero.GetCunningPage(MasteryId.Cunning.GreenFathersGift);
+                if (greenfathersgift != null &&
+                    hero.IsUsingMastery(greenfathersgift) &&
+                    hero.HasBuff("Mastery6341"))
+                {
+                    amount *= target.Health * 3 / 100;
+                }
+
+                if (minionTarget != null)
+                {
+                    if (source.HasBuff("barontarget") &&
+                        minionTarget.UnitSkinName.Contains("SRU_Baron"))
+                    {
+                        amount *= 0.5;
+                    }
+
+                    if (source.HasBuff("dragonbuff_tooltipmanager") &&
+                         minionTarget.HasBuff("s5_dragonvengeance") &&
+                         minionTarget.UnitSkinName.Contains("SRU_Dragon"))
+                    {
+                        /* TODO: Broscience, not 100% consistent:
+                            Real Effect: "7% reduced damage for each dragon killed by your team."
+                            Code Effect: "7% reduced damage for each dragon TYPE killed by your team."
+                            Reason for inconsistence:
+                                No Hero Buffs can tell you how many dragons you've killed, nor the name, nor its quantity
+                                    (You receive a determined buff whenever you kill a different dragon and that's it,
+                                    the quantity wont change nor further buffs will be added by killing another dragon of the same type),
+
+                                No Dragon Buffs can tell you how many dragons you've killed, nor the name, nor its quantity,
+                                    (The dragon gets the "s5_dragonvengeance" buff which reduces his damage received by 7% for each
+                                    elemental dragon killed by the attacking team and that's it, the quantity wont change nor further
+                                    buffs will be added by killing another dragon of the same type)
+
+                                No Effect Names can tell you how many dragons you've killed,
+                                No Objects Names can tell you how many dragons you've killed,
+                                No existent Property can tell you how many dragons you've killed, the best I found is "NeutralMinionsKilled", which is int, not a determined List/Array,
+                                so I can't just take it and filter the dragons.
+
+                            TL:DR; There is no way of telling in-game how many dragons a determined team has killed, so, for now, this is the best possible logic for it.
+                        */
+                        amount *= 1 - 7 * source.ValidActiveBuffs().Count(b => b.Name.Contains("dragonbuff") && b.Name.Contains("_manager")) / 100;
+                    }
+                }
+
                 if (targetHero != null)
                 {
-                    var buff = hero.GetBuff("sonapassivedebuff");
-                    if (buff != null)
+                    var battleTrance = hero.GetFerocityPage(MasteryId.Ferocity.BattleTrance);
+                    if (battleTrance != null &&
+                        hero.IsUsingMastery(battleTrance))
                     {
-                        var caster = buff.Caster as Obj_AI_Hero;
-                        if (caster != null)
+                        amount *= 1 + 3 / 100;
+                    }
+
+                    var assassin = hero.GetCunningPage(MasteryId.Cunning.Assassin);
+                    if (assassin != null &&
+                        hero.IsUsingMastery(assassin) &&
+                        source.CountAllyHeroesInRange(800f) == 0)
+                    {
+                        amount *= 1.02;
+                    }
+
+                    var merciless = hero.GetCunningPage(MasteryId.Cunning.Merciless);
+                    if (merciless != null &&
+                        hero.IsUsingMastery(merciless) &&
+                        targetHero.HealthPercent() < 40)
+                    {
+                        amount *= 1 + new[] { 0.6, 1.2, 1.8, 2.4, 3 }[merciless.Points - 1] / 100;
+                    }
+
+                    var exposeweakness = targetHero.GetBuff("ExposeWeaknessDebuff");
+                    if (exposeweakness != null)
+                    {
+                        var caster = exposeweakness.Caster;
+                        if (caster != null &&
+                            hero.Team == caster.Team &&
+                            hero.NetworkId != caster.NetworkId)
                         {
-                            amount *= 1 - (0.25 + 0.04 * caster.TotalAbilityDamage / 100);
+                            amount *= 1 + 3 / 100;
                         }
                     }
 
-                    var masterybuff = targetHero.GetBuff("ExposeWeaknessDebuff");
-                    if (masterybuff != null &&
-                        hero.Team == masterybuff.Caster?.Team &&
-                        masterybuff.Caster?.NetworkId != hero.NetworkId)
+                    var doubleEdgedSword2 = targetHero.GetFerocityPage(MasteryId.Ferocity.DoubleEdgedSword);
+                    if (doubleEdgedSword2 != null &&
+                        targetHero.IsUsingMastery(doubleEdgedSword2))
                     {
-                        amount *= 1 + 3 / 100; // 3% Increase.
+                        amount *= 1 + 1.5 / 100;
                     }
 
                     if (hero.MaxHealth < targetHero.MaxHealth && damageType == DamageType.Physical)
@@ -584,12 +637,9 @@ namespace Aimtec.SDK.Damage
                         }
                     }
 
-                    var doubleEdgedSword = targetHero.GetFerocityPage(MasteryId.Ferocity.DoubleEdgedSword);
-                    if (doubleEdgedSword != null &&
-                        targetHero.IsUsingMastery(doubleEdgedSword))
-                    {
-                        amount *= 1 + 1.5 / 100; // 1.5% Increase.
-                    }
+                    var damageReductions = DamageReductions.ComputeReductions(hero, targetHero, damageType);
+                    amount *= damageReductions.PercentDamageReduction;
+                    amount += damageReductions.FlatDamageReduction;
                 }
             }
 

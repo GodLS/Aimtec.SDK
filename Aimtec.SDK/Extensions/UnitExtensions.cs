@@ -24,14 +24,9 @@ namespace Aimtec.SDK.Extensions
         /// </summary>
         public static SpellSlot GetSpellSlot(this Obj_AI_Base unit, string spellName)
         {
-            var spell = unit.SpellBook.Spells.FirstOrDefault(x => x.Name.Equals(spellName, StringComparison.OrdinalIgnoreCase));
+            var spell = unit.SpellBook.Spells.FirstOrDefault(x => !string.IsNullOrEmpty(x.Name) && x.Name.Equals(spellName, StringComparison.OrdinalIgnoreCase));
 
-            if (spell != null)
-            {
-                return spell.Slot;
-            }
-
-            return SpellSlot.Unknown;
+            return spell?.Slot ?? SpellSlot.Unknown;
         }
 
         /// <summary>
@@ -89,6 +84,12 @@ namespace Aimtec.SDK.Extensions
             return Vector3.Distance(gameObject.ServerPosition, v1);
         }
 
+        /// <summary>
+        ///     Returns the 2D distance between a gameobject and a vector.
+        /// </summary>
+        /// <param name="gameObject">The GameObject.</param>
+        /// <param name="v1">The vector.</param>
+        /// <returns></returns>
         public static float Distance(this GameObject gameObject, Vector2 v1)
         {
             return Vector2.Distance((Vector2) gameObject.ServerPosition, v1);
@@ -174,6 +175,25 @@ namespace Aimtec.SDK.Extensions
         public static int GetBuffCount(this Obj_AI_Base from, string buffname)
         {
             return from.BuffManager.GetBuffCount(buffname, true);
+        }
+
+        /// <summary>
+        ///     Returns the real number of the stacks of the 'buffname' buff the target possesses.
+        /// </summary>
+        /// <param name="from">The target.</param>
+        /// <param name="buffname">The buffname.</param>
+        public static int GetRealBuffCount(this Obj_AI_Base from, string buffname)
+        {
+            var getBuffCount = from.BuffManager.GetBuffCount(buffname, true);
+            switch (getBuffCount)
+            {
+                case -1:
+                    return 0;
+                case 0:
+                    return 1;
+            }
+
+            return getBuffCount;
         }
 
         /// <summary>
@@ -281,6 +301,19 @@ namespace Aimtec.SDK.Extensions
         public static bool HasItem(this Obj_AI_Base from, uint itemId)
         {
             return from.Inventory.HasItem(itemId);
+        }
+
+        /// <summary>
+        ///     Determines whether the specified target has a spell shield.
+        /// </summary>
+        /// <param name="unit">The unit.</param>
+        /// <returns>
+        ///     <c>true</c> if the specified target has a spell shield; otherwise, <c>false</c>.
+        /// </returns>
+        public static bool HasSpellShield(this Obj_AI_Base unit)
+        {
+            // probably broken 
+            return unit.HasBuffOfType(BuffType.SpellShield) || unit.HasBuffOfType(BuffType.SpellImmunity);
         }
 
         /// <summary>
@@ -412,7 +445,7 @@ namespace Aimtec.SDK.Extensions
         ///     Returns true if this unit is able to be targetted by spells 
         /// </summary>
         /// <param name="unit">The unit.</param
-        /// <param name="unit">The unit.</param>
+        /// <param name="range">The range.</param>
         public static bool IsValidSpellTarget(this AttackableUnit unit, float range = float.MaxValue)
         {
             if (!unit.IsValidTarget(range))
@@ -426,14 +459,12 @@ namespace Aimtec.SDK.Extensions
             }
 
             var mUnit = unit as Obj_AI_Minion;
-
             if (mUnit == null)
             {
                 return false;
             }
 
             var name = mUnit.UnitSkinName.ToLower();
-
             if (name.Contains("ward") || name.Contains("sru_plant_") || name.Contains("barrel"))
             {
                 return false;

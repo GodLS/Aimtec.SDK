@@ -83,7 +83,7 @@
         ///     The children of this menu
         /// </summary>
         /// <value>The children.</value>
-        internal virtual Dictionary<string, MenuComponent> Children { get; }
+        public virtual Dictionary<string, MenuComponent> Children { get; }
 
         /// <summary>
         ///     Gets or sets the position.
