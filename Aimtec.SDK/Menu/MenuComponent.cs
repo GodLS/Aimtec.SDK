@@ -76,7 +76,7 @@
         public Menu Parent { get; set; }
 
         /// <inheritdoc />
-        public Dictionary<string, MenuComponent> Children { get; }
+        public virtual Dictionary<string, MenuComponent> Children { get; }
 
         #endregion
 
