@@ -67,12 +67,6 @@
         #region Public Properties
 
         /// <summary>
-        ///     Gets the children.
-        /// </summary>
-        /// <value>The children.</value>
-        public Dictionary<string, MenuComponent> Children { get; } = new Dictionary<string, MenuComponent>();
-
-        /// <summary>
         ///     Gets a value indicating whether this instance is a menu.
         /// </summary>
         /// <value><c>true</c> if this instance is a menu; otherwise, <c>false</c>.</value>
